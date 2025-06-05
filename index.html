@@ -1,1 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Imágenes con Runware.ai</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilo para un mensaje de carga/error más agradable que alert() */
+        .message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            font-family: 'Inter', sans-serif;
+        }
+        .message-box.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .message-box.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .message-box.info {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+        /* Estilo para el placeholder de la imagen */
+        #imageContainer img[src=""] {
+            display: none; /* Ocultar si no hay imagen */
+        }
+        #imageContainer img:not([src=""]) {
+            display: block; /* Mostrar si hay imagen */
+        }
+        #imageContainer .placeholder-text {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af; /* text-gray-400 */
+            font-style: italic;
+            height: 100%;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4 font-[Inter]">
+
+    <div class="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg">
+        <h1 class="text-2xl sm:text-3xl font-bold mb-6 text-center text-indigo-400">Generador de Imágenes AI</h1>
+        <p class="text-sm text-gray-400 mb-4 text-center">
+            Impulsado por <a href="https://runware.ai/" target="_blank" rel="noopener noreferrer" class="text-indigo-500 hover:underline">Runware.ai</a>.
+            Introduce tu API Key y ajusta los parámetros de la API en el código si es necesario.
+        </p>
+
+        <div class="mb-6">
+            <label for="apiKey" class="block text-sm font-medium text-gray-300 mb-1">Tu API Key de Runware.ai:</label>
+            <input type="password" id="apiKey" name="apiKey" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="Pega tu API Key aquí">
+        </div>
+
+        <div class="mb-6">
+            <label for="prompt" class="block text-sm font-medium text-gray-300 mb-1">Prompt (descripción de la imagen):</label>
+            <textarea id="prompt" name="prompt" rows="3" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="Ej: Un gato astronauta en la luna, estilo pixel art"></textarea>
+        </div>
+
+        <button id="generateButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+            Crear Imagen
+        </button>
+
+        <div id="loadingIndicator" class="mt-6 text-center text-gray-400" style="display: none;">
+            <svg class="animate-spin h-5 w-5 text-indigo-400 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            Generando imagen... esto podría tardar un momento.
+        </div>
+
+        <div id="imageContainer" class="mt-8 border-2 border-dashed border-gray-600 rounded-lg bg-gray-700/50 aspect-square w-full max-w-md mx-auto flex items-center justify-center overflow-hidden">
+            <!-- La imagen generada se mostrará aquí -->
+            <img id="generatedImage" src="" alt="Imagen Generada" class="max-w-full max-h-full object-contain rounded-md">
+            <div id="placeholderText" class="placeholder-text">Aquí aparecerá tu imagen</div>
+        </div>
+    </div>
+
+    <!-- Contenedor para mensajes -->
+    <div id="messageContainer"></div>
+
+    <script>
+        const apiKeyInput = document.getElementById('apiKey');
+        const promptInput = document.getElementById('prompt');
+        const generateButton = document.getElementById('generateButton');
+        const imageContainer = document.getElementById('imageContainer');
+        const generatedImage = document.getElementById('generatedImage');
+        const placeholderText = document.getElementById('placeholderText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const messageContainer = document.getElementById('messageContainer');
+
+        // Cargar API Key guardada (opcional, pero cómodo)
+        apiKeyInput.value = localStorage.getItem('runwareApiKey') || '';
+        apiKeyInput.addEventListener('input', () => {
+            localStorage.setItem('runwareApiKey', apiKeyInput.value);
+        });
+
+        function showMessage(text, type = 'info', duration = 5000) {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = text;
+            messageDiv.className = `message-box ${type}`;
+            messageContainer.appendChild(messageDiv);
+            setTimeout(() => {
+                messageDiv.remove();
+            }, duration);
+        }
+
+        generateButton.addEventListener('click', async () => {
+            const prompt = promptInput.value.trim();
+            const apiKey = apiKeyInput.value.trim();
+
+            if (!apiKey) {
+                showMessage('Por favor, introduce tu API Key de Runware.ai.', 'error');
+                apiKeyInput.focus();
+                return;
+            }
+
+            if (!prompt) {
+                showMessage('Por favor, introduce un prompt para generar la imagen.', 'error');
+                promptInput.focus();
+                return;
+            }
+
+            // Mostrar indicador de carga y ocultar imagen/placeholder
+            loadingIndicator.style.display = 'block';
+            generatedImage.src = ''; // Limpiar imagen anterior
+            generatedImage.style.display = 'none';
+            placeholderText.style.display = 'none';
+            generateButton.disabled = true;
+            generateButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // --- IMPORTANTE: CONFIGURACIÓN DE LA API DE RUNWARE.AI ---
+                // Deberás consultar la documentación oficial de Runware.ai para:
+                // 1. El ENDPOINT correcto de la API para generación de imágenes (ej. Stable Diffusion).
+                // 2. El MODEL_ID específico para la opción más barata/rápida que desees.
+                // 3. La estructura EXACTA del `body` de la petición.
+                // 4. El formato de la AUTORIZACIÓN (Bearer token, X-Api-Key, etc.).
+                // 5. Cómo extraer la URL de la imagen o los datos base64 de la RESPUESTA.
+
+                const RUNWARE_API_ENDPOINT = 'https://api.runware.ai/v1/inference'; // EJEMPLO, ¡VERIFICA!
+                const CHEAPEST_MODEL_ID = 'stable-diffusion-v1-5-base'; // EJEMPLO, ¡VERIFICA ID EN RUNWARE!
+
+                // Estructura del cuerpo de la petición (payload) - ¡ESTO ES UN EJEMPLO!
+                // Ajusta según la documentación de Runware.ai para el modelo elegido.
+                const payload = {
+                    model: CHEAPEST_MODEL_ID,
+                    prompt: prompt,
+                    num_outputs: 1,      // Queremos 1 imagen
+                    width: 256,          // Mínima resolución (ej. 256x256 o 512x512)
+                    height: 256,         // Mínima resolución
+                    steps: 20,           // Mínimos pasos para calidad baja/rápida (ej. para Stable Diffusion)
+                    guidance_scale: 7,   // Valor común para Stable Diffusion
+                    // Otros parámetros que Runware pueda requerir o permitir para "más barato"
+                };
+
+                console.log('Enviando petición a Runware API con payload:', payload);
+
+                const response = await fetch(RUNWARE_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Ajusta el tipo de autorización según Runware.ai
+                        // Podría ser 'Authorization': `Bearer ${apiKey}`
+                        // o 'X-Api-Key': apiKey
+                        'Authorization': `Bearer ${apiKey}`, // ¡VERIFICA ESTO!
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Error desconocido al procesar la respuesta del servidor.' }));
+                    console.error('Error de la API:', response.status, errorData);
+                    throw new Error(`Error de la API (${response.status}): ${errorData.message || response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('Respuesta de la API:', result);
+
+                // --- EXTRACCIÓN DE LA IMAGEN DE LA RESPUESTA ---
+                // Esto depende COMPLETAMENTE de cómo Runware.ai devuelva la imagen.
+                // Puede ser una URL directa, un array de URLs, o datos base64.
+                // EJEMPLO: Si devuelve { "images": [{ "url": "..." }] }
+                // const imageUrl = result.images && result.images[0] && result.images[0].url;
+
+                // EJEMPLO: Si devuelve directamente una URL en un campo como `output_url` o `image_url`
+                const imageUrl = result.output_url || result.image_url || (result.data && result.data.url); 
+                                // O si es base64: result.image_base64 (y tendrías que prefijar 'data:image/png;base64,')
+
+                if (imageUrl) {
+                    generatedImage.src = imageUrl;
+                    generatedImage.style.display = 'block';
+                    placeholderText.style.display = 'none';
+                    showMessage('Imagen generada con éxito.', 'success');
+                } else {
+                    console.error('No se encontró la URL de la imagen en la respuesta:', result);
+                    throw new Error('No se pudo encontrar la URL de la imagen en la respuesta de la API.');
+                }
+
+            } catch (error) {
+                console.error('Error al generar la imagen:', error);
+                showMessage(`Error: ${error.message}`, 'error', 8000);
+                placeholderText.textContent = 'Error al generar. Intenta de nuevo.';
+                placeholderText.style.display = 'block';
+                generatedImage.style.display = 'none';
+            } finally {
+                loadingIndicator.style.display = 'none';
+                generateButton.disabled = false;
+                generateButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        // Manejo inicial del placeholder
+        if (generatedImage.src === "" || generatedImage.src === window.location.href) { // Chequea si src está vacío o es la URL base
+            generatedImage.style.display = 'none';
+            placeholderText.style.display = 'flex';
+        } else {
+            generatedImage.style.display = 'block';
+            placeholderText.style.display = 'none';
+        }
+
+    </script>
+</body>
+</html>
 
